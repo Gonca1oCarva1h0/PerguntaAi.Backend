@@ -89,4 +89,11 @@ namespace PerguntaAi.Backend.Models
         public string OptionIndex { get; set; }
         public bool IsCorrect { get; set; }
     }
+
+    public class JoinRoomRequest
+    {
+        public string PinCode { get; set; }
+        public Guid PlayerId { get; set; }
+        public string DisplayName { get; set; }
+    }
 }

@@ -9,12 +9,11 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI(c => {
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "PerguntaAi API v1");
+    c.RoutePrefix = string.Empty; // Isto faz o Swagger abrir logo na página inicial
+});
 
 app.UseHttpsRedirection();
 
