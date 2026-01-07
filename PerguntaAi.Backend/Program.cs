@@ -1,24 +1,21 @@
+using PerguntaAi.Backend.Hubs;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSignalR();
+builder.Services.AddCors(opt => opt.AddPolicy("AllowAll", p => p.AllowAnyMethod().AllowAnyHeader().AllowCredentials().SetIsOriginAllowed(_ => true)));
 
 var app = builder.Build();
 
 app.UseSwagger();
-app.UseSwaggerUI(c => {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "PerguntaAi API v1");
-    c.RoutePrefix = string.Empty; // Isto faz o Swagger abrir logo na página inicial
-});
-
+app.UseSwaggerUI(c => { c.SwaggerEndpoint("/swagger/v1/swagger.json", "API v1"); c.RoutePrefix = string.Empty; });
+app.UseCors("AllowAll");
 app.UseHttpsRedirection();
-
 app.UseAuthorization();
-
 app.MapControllers();
+app.MapHub<GameHub>("/gameHub");
 
 app.Run();
