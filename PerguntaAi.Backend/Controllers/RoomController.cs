@@ -132,7 +132,6 @@ public class RoomController : ControllerBase
         }
     }
 
-    // POST: api/Room/{id}/end
     [HttpPost("{id}/end")]
     public async Task<IActionResult> EndRoom(Guid id, [FromQuery] Guid hostId)
     {
@@ -142,7 +141,7 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            // Valida se quem está a tentar terminar é o Host da sala
+            // Utilizando host_admin_id conforme solicitado
             var sql = "UPDATE public.room SET status = 'FINISHED', ended_at = NOW() " +
                       "WHERE room_id = @id AND host_admin_id = @hostId AND status = 'STARTED'";
 
@@ -154,7 +153,7 @@ public class RoomController : ControllerBase
 
             if (rowsAffected == 0)
             {
-                return Unauthorized("Apenas o criador da sala pode encerrar o jogo.");
+                return BadRequest(new { error = "Não foi possível encerrar a sala. Verifique o host_admin_id ou o estado da sala." });
             }
 
             var leaderboard = new List<object>();
@@ -166,13 +165,17 @@ public class RoomController : ControllerBase
 
             while (await reader.ReadAsync())
             {
-                leaderboard.Add(new { name = reader.GetString(0), points = reader.GetInt32(1) });
+                leaderboard.Add(new
+                {
+                    name = reader.GetString(0),
+                    points = reader.GetInt32(1)
+                });
             }
 
             return Ok(new
             {
                 message = "Jogo encerrado com sucesso!",
-                ended_at = DateTime.Now,
+                ended_at = DateTime.UtcNow,
                 leaderboard = leaderboard
             });
         }
