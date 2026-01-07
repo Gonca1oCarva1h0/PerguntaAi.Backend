@@ -42,7 +42,9 @@ public class PlayerProfileController : ControllerBase
             return Ok(new
             {
                 message = "Jogador registado com sucesso!",
-                player_id = playerId
+                player_id = playerId,
+                // Retornamos também o ID formatado para o Unity apanhar logo no registo se quiser
+                id = playerId
             });
         }
         catch (NpgsqlException ex) when (ex.SqlState == "23505")
@@ -55,6 +57,7 @@ public class PlayerProfileController : ControllerBase
         }
     }
 
+    // Este mantém-se igual (busca pelo GUID da base de dados)
     [HttpGet("{id}")]
     public async Task<IActionResult> GetPlayer(Guid id)
     {
@@ -80,6 +83,45 @@ public class PlayerProfileController : ControllerBase
         }
         return NotFound();
     }
+
+    // --- NOVO MÉTODO (ADICIONADO AQUI) ---
+    // Procura pelo ID do Firebase (external_ref) e devolve o GUID (player_id)
+    [HttpGet("firebase/{uid}")]
+    public async Task<IActionResult> GetPlayerByFirebase(string uid)
+    {
+        if (string.IsNullOrEmpty(uid))
+            return BadRequest("Firebase UID inválido.");
+
+        string connString = _configuration.GetConnectionString("DefaultConnection");
+        await using var conn = new NpgsqlConnection(connString);
+        await conn.OpenAsync();
+
+        // AQUI ESTÁ A MAGIA: WHERE external_ref = @uid
+        var sql = "SELECT player_id, external_ref, preferred_name, country, created_at FROM PlayerProfile WHERE external_ref = @uid";
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("uid", uid);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return Ok(new
+            {
+                // Campos essenciais para o Unity:
+                id = reader.GetGuid(0),             // O GUID que precisamos para entrar na sala
+                displayName = reader.GetString(2),  // O Nome
+
+                // Campos originais do Backend:
+                player_id = reader.GetGuid(0),
+                external_ref = reader.GetString(1),
+                preferred_name = reader.GetString(2),
+                country = reader.GetString(3),
+                created_at = reader.GetDateTime(4)
+            });
+        }
+        return NotFound("Jogador não encontrado com esse Firebase UID.");
+    }
+    // -------------------------------------
 
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdatePlayer(Guid id, [FromBody] UpdatePlayerRequest request)
