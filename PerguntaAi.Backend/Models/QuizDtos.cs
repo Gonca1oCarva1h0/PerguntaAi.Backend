@@ -74,7 +74,8 @@ namespace PerguntaAi.Backend.Models
     {
         public Guid RoomPlayerId { get; set; }
         public Guid QuestionId { get; set; }
-        public Guid SelectedOptionId { get; set; }
+        public Guid? SelectedOptionId { get; set; } // Opcional para múltipla escolha
+        public string? AnswerText { get; set; }      // Novo: Para perguntas escritas
     }
 
     // --- RESPONSES (OUTPUT) ---

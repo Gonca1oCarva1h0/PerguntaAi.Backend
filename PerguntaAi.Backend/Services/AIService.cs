@@ -19,7 +19,13 @@ namespace PerguntaAi.Backend.Services
             using var client = new HttpClient();
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
-            var prompt = $@"Gera um quiz sobre '{theme}' em português. 
+            var prompt = $@"Gera um quiz sobre '{theme}' em português com 5 perguntas.
+            Varia entre o tipo 'MULTIPLE_CHOICE' e 'WRITTEN'. 
+
+            REGRAS:
+            1. Para 'MULTIPLE_CHOICE': Envia 4 opções, uma delas com 'isCorrect': true.
+            2. Para 'WRITTEN': Envia APENAS 1 opção com o texto da resposta correta e 'isCorrect': true.
+
             Responde APENAS com JSON puro no formato:
             {{
               ""title"": ""string"",
@@ -28,12 +34,11 @@ namespace PerguntaAi.Backend.Services
               ""questions"": [
                 {{
                   ""text"": ""string"",
-                  ""type"": ""MULTIPLE_CHOICE"",
+                  ""type"": ""MULTIPLE_CHOICE"" ou ""WRITTEN"",
                   ""orderIndex"": 1,
                   ""pointsBase"": 100,
                   ""options"": [
-                    {{ ""text"": ""string"", ""isCorrect"": true, ""optionIndex"": ""A"" }},
-                    {{ ""text"": ""string"", ""isCorrect"": false, ""optionIndex"": ""B"" }}
+                    {{ ""text"": ""string"", ""isCorrect"": true, ""optionIndex"": ""A"" }}
                   ]
                 }}
               ]
@@ -56,14 +61,12 @@ namespace PerguntaAi.Backend.Services
             using var doc = JsonDocument.Parse(jsonResponse);
             var rawJson = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
 
-            // Criada a variável cleanJson para limpar possíveis marcações da IA
             var cleanJson = rawJson.Replace("```json", "").Replace("```", "").Trim();
 
             var result = JsonSerializer.Deserialize<CreateQuizRequest>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             if (result == null) throw new Exception("A IA devolveu um formato inválido.");
 
-            // Inicializa a lista se for nula para evitar o erro de referência
             if (result.Questions == null) result.Questions = new List<QuestionRequest>();
 
             return result;
