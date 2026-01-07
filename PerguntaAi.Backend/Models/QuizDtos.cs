@@ -60,6 +60,7 @@ namespace PerguntaAi.Backend.Models
     public class CreateRoomRequest
     {
         public Guid QuizId { get; set; }
+        public Guid HostId { get; set; } // Adicionado para identificar o criador
     }
 
     public class JoinRoomRequest

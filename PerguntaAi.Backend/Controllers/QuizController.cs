@@ -5,26 +5,50 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using PerguntaAi.Backend.Models;
+using PerguntaAi.Backend.Services;
 
 [ApiController]
 [Route("api/[controller]")]
 public class QuizController : ControllerBase
 {
     private readonly IConfiguration _configuration;
+    private readonly AIService _aiService = new AIService();
 
     public QuizController(IConfiguration configuration)
     {
         _configuration = configuration;
     }
 
+    [HttpPost("generate")]
+    public async Task<IActionResult> GenerateAIQuiz([FromBody] string theme)
+    {
+        try
+        {
+            var quizRequest = await _aiService.GenerateQuizAsync(theme);
+
+            // Verifica se a IA falhou ao gerar o objeto
+            if (quizRequest == null) return BadRequest("Não foi possível gerar o quiz para este tema.");
+
+            return await CreateFullQuiz(quizRequest);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Erro ao gerar quiz com IA: " + ex.Message });
+        }
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateFullQuiz([FromBody] CreateQuizRequest request)
     {
+        // Validação de segurança
+        if (request == null || request.Questions == null)
+            return BadRequest("Dados do quiz ou perguntas estão em falta.");
+
         var quizResponse = new QuizResponse
         {
-            Title = request.Title,
+            Title = request.Title ?? "Quiz Sem Título",
             Description = request.Description,
-            TimePerQuestion = request.TimePerQuestion,
+            TimePerQuestion = request.TimePerQuestion == 0 ? 30 : request.TimePerQuestion,
             Questions = new List<QuestionResponse>()
         };
 
@@ -35,15 +59,14 @@ public class QuizController : ControllerBase
 
         try
         {
-            var quizSql = "INSERT INTO Quiz (quiz_id, title, description, time_per_question, allow_powerups, is_published, version, created_at) " +
-                          "VALUES (uuid_generate_v4(), @title, @description, @time_per_question, @allow_powerups, true, 1, NOW()) " +
+            var quizSql = "INSERT INTO Quiz (quiz_id, title, description, time_per_question, is_published, version, created_at) " +
+                          "VALUES (uuid_generate_v4(), @title, @description, @time_per_question, true, 1, NOW()) " +
                           "RETURNING quiz_id";
 
             await using var quizCmd = new NpgsqlCommand(quizSql, conn, transaction);
             quizCmd.Parameters.AddWithValue("title", request.Title);
             quizCmd.Parameters.AddWithValue("description", request.Description ?? (object)DBNull.Value);
             quizCmd.Parameters.AddWithValue("time_per_question", request.TimePerQuestion);
-            quizCmd.Parameters.AddWithValue("allow_powerups", request.AllowPowerups);
 
             quizResponse.QuizId = (Guid)await quizCmd.ExecuteScalarAsync();
 
@@ -207,10 +230,10 @@ public class QuizController : ControllerBase
 
         try
         {
-            string[] tables = { "Answer", "LeaderboardEntry", "RoomPlayer", "Room", "QuestionOption", "Question", "QuizArchive" };
+            string[] tables = { "Answer", "RoomPlayer", "Room", "QuestionOption", "Question" };
             foreach (var table in tables)
             {
-                var filter = table.StartsWith("Room") || table == "Answer" || table == "LeaderboardEntry"
+                var filter = table.StartsWith("Room") || table == "Answer"
                              ? "room_id IN (SELECT room_id FROM Room WHERE quiz_id = @id)"
                              : "quiz_id = @id";
                 if (table == "Answer") filter = "room_player_id IN (SELECT room_player_id FROM RoomPlayer WHERE room_id IN (SELECT room_id FROM Room WHERE quiz_id = @id))";

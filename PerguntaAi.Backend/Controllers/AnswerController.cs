@@ -27,6 +27,7 @@ public class AnswerController : ControllerBase
             int pts = correct ? reader.GetInt32(1) : 0;
             await reader.CloseAsync();
 
+            // 1. Inserir a resposta na tabela Answer
             var sqlInsert = "INSERT INTO public.answer (answer_id, room_player_id, question_id, selected_option_id, points_awarded, is_correct, answered_at) " +
                             "VALUES (@id, @rp, @q, @o, @p, @c, NOW())";
 
@@ -39,11 +40,16 @@ public class AnswerController : ControllerBase
             cmdInsert.Parameters.AddWithValue("c", correct);
             await cmdInsert.ExecuteNonQueryAsync();
 
-            if (correct)
-            {
-                await new NpgsqlCommand("UPDATE public.roomplayer SET total_points = total_points + @p WHERE room_player_id = @rp", conn)
-                { Parameters = { new("p", pts), new("rp", request.RoomPlayerId) } }.ExecuteNonQueryAsync();
-            }
+            // 2. Atualizar o índice da pergunta (para avançar) e somar pontos se estiver correto
+            var sqlUpdatePlayer = "UPDATE public.roomplayer SET " +
+                                  "current_question_index = current_question_index + 1" +
+                                  (correct ? ", total_points = total_points + @p " : " ") +
+                                  "WHERE room_player_id = @rp";
+
+            await using var cmdUpdate = new NpgsqlCommand(sqlUpdatePlayer, conn);
+            cmdUpdate.Parameters.AddWithValue("rp", request.RoomPlayerId);
+            if (correct) cmdUpdate.Parameters.AddWithValue("p", pts);
+            await cmdUpdate.ExecuteNonQueryAsync();
 
             return Ok(new { correct, pointsEarned = pts });
         }

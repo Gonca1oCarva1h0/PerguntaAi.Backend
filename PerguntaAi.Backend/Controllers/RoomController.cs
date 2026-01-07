@@ -30,8 +30,8 @@ public class RoomController : ControllerBase
             if (roomId == null) return NotFound("Sala não encontrada ou já em jogo.");
 
             Guid newRoomPlayerId = Guid.NewGuid();
-            var joinSql = "INSERT INTO public.roomplayer (room_player_id, room_id, player_id, display_name, join_time, is_host, status, total_points, current_question_index) " +
-                          "VALUES (@rp_id, @room, @player, @name, NOW(), false, 'ACTIVE', 0, 0)";
+            var joinSql = "INSERT INTO public.roomplayer (room_player_id, room_id, player_id, display_name, join_time, status, total_points, current_question_index) " +
+                  "VALUES (@rp_id, @room, @player, @name, NOW(), 'ACTIVE', 0, 0)";
 
             await using var joinCmd = new NpgsqlCommand(joinSql, conn);
             joinCmd.Parameters.AddWithValue("rp_id", newRoomPlayerId);
@@ -60,13 +60,15 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            var sql = "INSERT INTO public.room (room_id, quiz_id, pin_code, status, max_players, created_at) " +
-                      "VALUES (@id, @quiz, @code, 'WAITING', 50, NOW())";
+            // Inclui o host_admin_id na criação da sala
+            var sql = "INSERT INTO public.room (room_id, quiz_id, pin_code, status, max_players, created_at, host_admin_id) " +
+                      "VALUES (@id, @quiz, @code, 'WAITING', 50, NOW(), @host)";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("id", newRoomId);
             cmd.Parameters.AddWithValue("quiz", request.QuizId);
             cmd.Parameters.AddWithValue("code", pinCode);
+            cmd.Parameters.AddWithValue("host", request.HostId);
 
             await cmd.ExecuteNonQueryAsync();
             return Ok(new { roomId = newRoomId, pinCode });
@@ -96,9 +98,10 @@ public class RoomController : ControllerBase
         }
         return Ok(leaderboard);
     }
+
     // POST: api/Room/{id}/start
     [HttpPost("{id}/start")]
-    public async Task<IActionResult> StartRoom(Guid id)
+    public async Task<IActionResult> StartRoom(Guid id, [FromQuery] Guid hostId)
     {
         try
         {
@@ -106,28 +109,22 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            // 1. Atualiza o status para STARTED e define a hora de início
+            // Valida se quem está a tentar começar é o Host da sala
             var sql = "UPDATE public.room SET status = 'STARTED', started_at = NOW() " +
-                      "WHERE room_id = @id AND status = 'WAITING'";
+                      "WHERE room_id = @id AND host_admin_id = @hostId AND status = 'WAITING'";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("id", id);
+            cmd.Parameters.AddWithValue("hostId", hostId);
 
             int rowsAffected = await cmd.ExecuteNonQueryAsync();
 
             if (rowsAffected == 0)
             {
-                return BadRequest("Não foi possível iniciar a sala. Verifique se o ID está correto ou se a sala já não está em jogo.");
+                return Unauthorized("Apenas o criador da sala pode iniciar o jogo.");
             }
 
-            // 2. Opcional: Notificar todos os jogadores via SignalR (se já tiver o GameHub configurado)
-            // await _hubContext.Clients.Group(id.ToString()).SendAsync("GameStarted");
-
-            return Ok(new
-            {
-                message = "O jogo começou!",
-                started_at = DateTime.Now
-            });
+            return Ok(new { message = "O jogo começou!", started_at = DateTime.Now });
         }
         catch (Exception ex)
         {
@@ -137,7 +134,7 @@ public class RoomController : ControllerBase
 
     // POST: api/Room/{id}/end
     [HttpPost("{id}/end")]
-    public async Task<IActionResult> EndRoom(Guid id)
+    public async Task<IActionResult> EndRoom(Guid id, [FromQuery] Guid hostId)
     {
         try
         {
@@ -145,21 +142,21 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            // 1. Atualiza o status para FINISHED e define a hora de término (ended_at)
+            // Valida se quem está a tentar terminar é o Host da sala
             var sql = "UPDATE public.room SET status = 'FINISHED', ended_at = NOW() " +
-                      "WHERE room_id = @id AND status = 'STARTED'";
+                      "WHERE room_id = @id AND host_admin_id = @hostId AND status = 'STARTED'";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("id", id);
+            cmd.Parameters.AddWithValue("hostId", hostId);
 
             int rowsAffected = await cmd.ExecuteNonQueryAsync();
 
             if (rowsAffected == 0)
             {
-                return BadRequest("Não foi possível encerrar a sala. Verifique se o ID está correto ou se o jogo já terminou.");
+                return Unauthorized("Apenas o criador da sala pode encerrar o jogo.");
             }
 
-            // 2. Obtém o ranking final dos jogadores (display_name e total_points)
             var leaderboard = new List<object>();
             var leaderSql = "SELECT display_name, total_points FROM public.roomplayer WHERE room_id = @id ORDER BY total_points DESC";
 
@@ -169,11 +166,7 @@ public class RoomController : ControllerBase
 
             while (await reader.ReadAsync())
             {
-                leaderboard.Add(new
-                {
-                    name = reader.GetString(0),
-                    points = reader.GetInt32(1)
-                });
+                leaderboard.Add(new { name = reader.GetString(0), points = reader.GetInt32(1) });
             }
 
             return Ok(new
