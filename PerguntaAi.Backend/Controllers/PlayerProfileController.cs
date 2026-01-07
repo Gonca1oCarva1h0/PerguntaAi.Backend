@@ -1,14 +1,13 @@
-﻿// Ficheiro: Controllers/PlayerProfileController.cs
-
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using PerguntaAi.Backend.Models; // Importa o DTO
+using PerguntaAi.Backend.Models;
 
 [ApiController]
-[Route("api/[controller]")] // Rota base: /api/playerprofile
+[Route("api/[controller]")]
 public class PlayerProfileController : ControllerBase
 {
     private readonly IConfiguration _configuration;
@@ -18,17 +17,11 @@ public class PlayerProfileController : ControllerBase
         _configuration = configuration;
     }
 
-    //=========================================================
-    // CREATE (Regista um jogador vindo do Firebase)
-    // POST /api/playerprofile/register
-    //=========================================================
     [HttpPost("register")]
     public async Task<IActionResult> RegisterPlayer([FromBody] RegisterRequest request)
     {
         if (request == null || string.IsNullOrEmpty(request.FirebaseUid) || string.IsNullOrEmpty(request.DisplayName))
-        {
             return BadRequest("Dados inválidos.");
-        }
 
         try
         {
@@ -36,26 +29,71 @@ public class PlayerProfileController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            // Usa a tabela de 11 colunas
-            var sql = "INSERT INTO PlayerProfile (player_id, external_ref, preferred_name, country, created_at, stats)" +
-                      "VALUES (uuid_generate_v4(), @external_ref, @preferred_name, 'PT', NOW(), null)";
+            var sql = "INSERT INTO PlayerProfile (player_id, external_ref, preferred_name, country, created_at, stats) " +
+                      "VALUES (uuid_generate_v4(), @external_ref, @preferred_name, 'PT', NOW(), null) " +
+                      "RETURNING player_id";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("external_ref", request.FirebaseUid);
             cmd.Parameters.AddWithValue("preferred_name", request.DisplayName);
 
-            await cmd.ExecuteNonQueryAsync();
+            var playerId = await cmd.ExecuteScalarAsync();
 
-            return Ok(new { message = "Jogador registado com sucesso!" });
+            return Ok(new
+            {
+                message = "Jogador registado com sucesso!",
+                player_id = playerId
+            });
         }
-        catch (NpgsqlException ex) when (ex.SqlState == "23505") // Unique violation
+        catch (NpgsqlException ex) when (ex.SqlState == "23505")
         {
-            // Isto pode acontecer se o external_ref for único e o user tentar registar-se 2x
-            return Conflict(new { error = "Este jogador (external_ref) já está registado." });
+            return Conflict(new { error = "Este jogador já está registado." });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = $"Erro interno do servidor: {ex.Message}" });
+            return StatusCode(500, new { error = ex.Message });
         }
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetPlayer(Guid id)
+    {
+        string connString = _configuration.GetConnectionString("DefaultConnection");
+        await using var conn = new NpgsqlConnection(connString);
+        await conn.OpenAsync();
+
+        var sql = "SELECT player_id, external_ref, preferred_name, country, created_at FROM PlayerProfile WHERE player_id = @id";
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("id", id);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return Ok(new
+            {
+                player_id = reader.GetGuid(0),
+                external_ref = reader.GetString(1),
+                preferred_name = reader.GetString(2),
+                country = reader.GetString(3),
+                created_at = reader.GetDateTime(4)
+            });
+        }
+        return NotFound();
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdatePlayer(Guid id, [FromBody] UpdatePlayerRequest request)
+    {
+        string connString = _configuration.GetConnectionString("DefaultConnection");
+        await using var conn = new NpgsqlConnection(connString);
+        await conn.OpenAsync();
+
+        var sql = "UPDATE PlayerProfile SET preferred_name = @name WHERE player_id = @id";
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("name", request.PreferredName);
+        cmd.Parameters.AddWithValue("id", id);
+
+        int rows = await cmd.ExecuteNonQueryAsync();
+        return rows > 0 ? NoContent() : NotFound();
     }
 }

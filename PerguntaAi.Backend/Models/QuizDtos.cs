@@ -3,6 +3,19 @@ using System.Collections.Generic;
 
 namespace PerguntaAi.Backend.Models
 {
+    // --- AUTH & PLAYER ---
+    public class RegisterRequest
+    {
+        public string FirebaseUid { get; set; }
+        public string DisplayName { get; set; }
+    }
+
+    public class UpdatePlayerRequest
+    {
+        public string PreferredName { get; set; }
+    }
+
+    // --- QUIZ CREATE ---
     public class CreateQuizRequest
     {
         public string Title { get; set; }
@@ -28,6 +41,13 @@ namespace PerguntaAi.Backend.Models
         public string OptionIndex { get; set; }
     }
 
+    // --- QUIZ UPDATE ---
+    public class QuizUpdateRequest
+    {
+        public string Title { get; set; }
+        public string Description { get; set; }
+    }
+
     public class QuestionUpdateRequest
     {
         public string Text { get; set; }
@@ -36,7 +56,11 @@ namespace PerguntaAi.Backend.Models
         public int PointsBase { get; set; }
     }
 
-    public class CreateRoomRequest { public Guid QuizId { get; set; } }
+    // --- ROOM & GAMEPLAY ---
+    public class CreateRoomRequest
+    {
+        public Guid QuizId { get; set; }
+    }
 
     public class JoinRoomRequest
     {
@@ -52,6 +76,7 @@ namespace PerguntaAi.Backend.Models
         public Guid SelectedOptionId { get; set; }
     }
 
+    // --- RESPONSES (OUTPUT) ---
     public class QuizResponse
     {
         public Guid QuizId { get; set; }
@@ -77,11 +102,5 @@ namespace PerguntaAi.Backend.Models
         public string Text { get; set; }
         public bool IsCorrect { get; set; }
         public string OptionIndex { get; set; }
-    }
-
-    public class RegisterRequest
-    {
-        public string FirebaseUid { get; set; }
-        public string DisplayName { get; set; }
     }
 }
