@@ -35,7 +35,7 @@ public class RoomController : ControllerBase
 
             await using var joinCmd = new NpgsqlCommand(joinSql, conn);
             joinCmd.Parameters.AddWithValue("rp_id", newRoomPlayerId);
-            joinCmd.Parameters.AddWithValue("id", roomId);
+            joinCmd.Parameters.AddWithValue("room", roomId);
             joinCmd.Parameters.AddWithValue("player", request.PlayerId);
             joinCmd.Parameters.AddWithValue("name", request.DisplayName);
 
@@ -178,6 +178,39 @@ public class RoomController : ControllerBase
                 ended_at = DateTime.UtcNow,
                 leaderboard = leaderboard
             });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("{id}/players")]
+    public async Task<IActionResult> GetRoomPlayers(Guid id)
+    {
+        try
+        {
+            string connString = _configuration.GetConnectionString("DefaultConnection");
+            await using var conn = new NpgsqlConnection(connString);
+            await conn.OpenAsync();
+
+            var sql = "SELECT display_name FROM public.roomplayer WHERE room_id = @id";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("id", id);
+
+            var players = new List<object>();
+            await using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                players.Add(new
+                {
+                    name = reader.GetString(0)
+                });
+            }
+
+            return Ok(players);
         }
         catch (Exception ex)
         {

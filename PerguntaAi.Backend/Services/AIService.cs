@@ -19,30 +19,39 @@ namespace PerguntaAi.Backend.Services
             using var client = new HttpClient();
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
-            var prompt = $@"Gera um quiz sobre '{theme}' em português com 5 perguntas.
-            Varia entre o tipo 'MULTIPLE_CHOICE' e 'WRITTEN'. 
+            // 1. Gera um número aleatório entre 5 e 10
+            int qtdPerguntas = new Random().Next(5, 11);
 
-            REGRAS:
-            1. Para 'MULTIPLE_CHOICE': Envia 4 opções, uma delas com 'isCorrect': true.
-            2. Para 'WRITTEN': Envia APENAS 1 opção com o texto da resposta correta e 'isCorrect': true.
+            // 2. Prompt atualizado com instrução de brevidade
+            var prompt = $@"Gera um quiz sobre '{theme}' em PT-PT com {qtdPerguntas} perguntas.
+    
+            REGRAS DE CONTEÚDO:
+            1. Varia entre 'MULTIPLE_CHOICE' e 'WRITTEN'.
+            2. Para 'WRITTEN': A resposta correta deve ser MUITO BREVE (máximo 1 a 3 palavras). Evita frases longas.
 
-            Responde APENAS com JSON puro no formato:
+            REGRAS TÉCNICAS (JSON ESTRITO):
+            1. Responde APENAS com JSON válido.
+            2. O campo 'optionIndex' tem de ser SEMPRE UMA STRING entre aspas (ex: ""A"", ""1"").
+
+            ESTRUTURA JSON OBRIGATÓRIA:
             {{
-              ""title"": ""string"",
-              ""description"": ""string"",
+              ""title"": ""Título"",
+              ""description"": ""Descrição"",
               ""timePerQuestion"": 30,
               ""questions"": [
                 {{
-                  ""text"": ""string"",
-                  ""type"": ""MULTIPLE_CHOICE"" ou ""WRITTEN"",
+                  ""text"": ""Pergunta?"",
+                  ""type"": ""MULTIPLE_CHOICE"",
                   ""orderIndex"": 1,
                   ""pointsBase"": 100,
                   ""options"": [
-                    {{ ""text"": ""string"", ""isCorrect"": true, ""optionIndex"": ""A"" }}
+                    {{ ""text"": ""Opção"", ""isCorrect"": true, ""optionIndex"": ""A"" }} 
                   ]
                 }}
               ]
-            }}";
+            }}
+    
+            Para 'WRITTEN', envia 1 opção correta com 'optionIndex': ""1"".";
 
             var requestBody = new
             {
@@ -61,12 +70,12 @@ namespace PerguntaAi.Backend.Services
             using var doc = JsonDocument.Parse(jsonResponse);
             var rawJson = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
 
+            // Limpeza de segurança
             var cleanJson = rawJson.Replace("```json", "").Replace("```", "").Trim();
 
             var result = JsonSerializer.Deserialize<CreateQuizRequest>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             if (result == null) throw new Exception("A IA devolveu um formato inválido.");
-
             if (result.Questions == null) result.Questions = new List<QuestionRequest>();
 
             return result;
