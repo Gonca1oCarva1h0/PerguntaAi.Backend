@@ -13,6 +13,32 @@ public class RoomController : ControllerBase
     private readonly IConfiguration _configuration;
     public RoomController(IConfiguration configuration) => _configuration = configuration;
 
+    [HttpGet("{id}/status")]
+    public async Task<IActionResult> GetRoomStatus(Guid id)
+    {
+        try
+        {
+            string connString = _configuration.GetConnectionString("DefaultConnection");
+            await using var conn = new NpgsqlConnection(connString);
+            await conn.OpenAsync();
+
+            var sql = "SELECT status FROM public.room WHERE room_id = @id";
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("id", id);
+
+            var status = await cmd.ExecuteScalarAsync();
+
+            if (status == null) return NotFound(new { error = "Sala não encontrada." });
+
+            return Ok(new { status = status.ToString() });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+
     [HttpPost("join")]
     public async Task<IActionResult> JoinRoom([FromBody] JoinRoomRequest request)
     {
@@ -22,16 +48,36 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            var roomSql = "SELECT room_id FROM public.room WHERE pin_code = @pin AND status = 'WAITING'";
-            await using var roomCmd = new NpgsqlCommand(roomSql, conn);
-            roomCmd.Parameters.AddWithValue("pin", request.PinCode);
-            var roomId = await roomCmd.ExecuteScalarAsync();
+            // Passo 1: Verificar se a sala existe E qual o estado dela
+            var roomSql = "SELECT room_id, status FROM public.room WHERE pin_code = @pin";
 
-            if (roomId == null) return NotFound("Sala não encontrada ou já em jogo.");
+            Guid roomId;
+            string status;
 
+            await using (var roomCmd = new NpgsqlCommand(roomSql, conn))
+            {
+                roomCmd.Parameters.AddWithValue("pin", request.PinCode);
+                await using var reader = await roomCmd.ExecuteReaderAsync();
+
+                if (!await reader.ReadAsync())
+                {
+                    return NotFound("PIN inválido. Sala não encontrada.");
+                }
+
+                roomId = reader.GetGuid(0);
+                status = reader.GetString(1);
+            } // O Reader fecha aqui para libertar a conexão para o INSERT
+
+            // Passo 2: Validar se pode entrar
+            if (status != "WAITING")
+            {
+                return BadRequest("Não é possível entrar. O jogo já começou ou terminou.");
+            }
+
+            // Passo 3: Inserir o jogador (Só chega aqui se for WAITING)
             Guid newRoomPlayerId = Guid.NewGuid();
             var joinSql = "INSERT INTO public.roomplayer (room_player_id, room_id, player_id, display_name, join_time, status, total_points, current_question_index) " +
-                  "VALUES (@rp_id, @room, @player, @name, NOW(), 'ACTIVE', 0, 0)";
+                          "VALUES (@rp_id, @room, @player, @name, NOW(), 'ACTIVE', 0, 0)";
 
             await using var joinCmd = new NpgsqlCommand(joinSql, conn);
             joinCmd.Parameters.AddWithValue("rp_id", newRoomPlayerId);
@@ -40,6 +86,7 @@ public class RoomController : ControllerBase
             joinCmd.Parameters.AddWithValue("name", request.DisplayName);
 
             await joinCmd.ExecuteNonQueryAsync();
+
             return Ok(new { roomPlayerId = newRoomPlayerId, roomId });
         }
         catch (Exception ex)
