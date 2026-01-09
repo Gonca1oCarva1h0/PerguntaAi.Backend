@@ -38,6 +38,7 @@ public class RoomController : ControllerBase
         }
     }
 
+
     [HttpPost("join")]
     public async Task<IActionResult> JoinRoom([FromBody] JoinRoomRequest request)
     {
@@ -47,12 +48,11 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            // --- ALTERAÇÃO 1: Adicionámos 'quiz_id' ao SELECT ---
-            var roomSql = "SELECT room_id, status, quiz_id FROM public.room WHERE pin_code = @pin";
+            // Passo 1: Verificar se a sala existe E qual o estado dela
+            var roomSql = "SELECT room_id, status FROM public.room WHERE pin_code = @pin";
 
             Guid roomId;
             string status;
-            Guid quizId; // Variável para guardar o ID do quiz
 
             await using (var roomCmd = new NpgsqlCommand(roomSql, conn))
             {
@@ -66,8 +66,7 @@ public class RoomController : ControllerBase
 
                 roomId = reader.GetGuid(0);
                 status = reader.GetString(1);
-                quizId = reader.GetGuid(2); // --- ALTERAÇÃO 2: Lemos o quiz_id da base de dados ---
-            }
+            } // O Reader fecha aqui para libertar a conexão para o INSERT
 
             // Passo 2: Validar se pode entrar
             if (status != "WAITING")
@@ -75,7 +74,7 @@ public class RoomController : ControllerBase
                 return BadRequest("Não é possível entrar. O jogo já começou ou terminou.");
             }
 
-            // Passo 3: Inserir o jogador
+            // Passo 3: Inserir o jogador (Só chega aqui se for WAITING)
             Guid newRoomPlayerId = Guid.NewGuid();
             var joinSql = "INSERT INTO public.roomplayer (room_player_id, room_id, player_id, display_name, join_time, status, total_points, current_question_index) " +
                           "VALUES (@rp_id, @room, @player, @name, NOW(), 'ACTIVE', 0, 0)";
@@ -88,8 +87,7 @@ public class RoomController : ControllerBase
 
             await joinCmd.ExecuteNonQueryAsync();
 
-            // --- ALTERAÇÃO 3: Enviamos o quizId de volta para o Unity ---
-            return Ok(new { roomPlayerId = newRoomPlayerId, roomId, quizId });
+            return Ok(new { roomPlayerId = newRoomPlayerId, roomId });
         }
         catch (Exception ex)
         {
@@ -109,6 +107,7 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
+            // Inclui o host_admin_id na criação da sala
             var sql = "INSERT INTO public.room (room_id, quiz_id, pin_code, status, max_players, created_at, host_admin_id) " +
                       "VALUES (@id, @quiz, @code, 'WAITING', 50, NOW(), @host)";
 
@@ -147,6 +146,7 @@ public class RoomController : ControllerBase
         return Ok(leaderboard);
     }
 
+    // POST: api/Room/{id}/start
     [HttpPost("{id}/start")]
     public async Task<IActionResult> StartRoom(Guid id, [FromQuery] Guid hostId)
     {
@@ -156,6 +156,7 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
+            // Valida se quem está a tentar começar é o Host da sala
             var sql = "UPDATE public.room SET status = 'STARTED', started_at = NOW() " +
                       "WHERE room_id = @id AND host_admin_id = @hostId AND status = 'WAITING'";
 
@@ -187,6 +188,7 @@ public class RoomController : ControllerBase
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
+            // Utilizando host_admin_id conforme solicitado
             var sql = "UPDATE public.room SET status = 'FINISHED', ended_at = NOW() " +
                       "WHERE room_id = @id AND host_admin_id = @hostId AND status = 'STARTED'";
 
