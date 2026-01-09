@@ -35,7 +35,7 @@ public class RoomController : ControllerBase
 
             await using var joinCmd = new NpgsqlCommand(joinSql, conn);
             joinCmd.Parameters.AddWithValue("rp_id", newRoomPlayerId);
-            joinCmd.Parameters.AddWithValue("RoomId", roomId);
+            joinCmd.Parameters.AddWithValue("id", roomId);
             joinCmd.Parameters.AddWithValue("player", request.PlayerId);
             joinCmd.Parameters.AddWithValue("name", request.DisplayName);
 
@@ -89,7 +89,7 @@ public class RoomController : ControllerBase
 
         var sql = "SELECT display_name, total_points FROM public.roomplayer WHERE room_id = @id ORDER BY total_points DESC";
         await using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("RoomId", id);
+        cmd.Parameters.AddWithValue("id", id);
         await using var reader = await cmd.ExecuteReaderAsync();
 
         while (await reader.ReadAsync())
@@ -114,7 +114,7 @@ public class RoomController : ControllerBase
                       "WHERE room_id = @id AND host_admin_id = @hostId AND status = 'WAITING'";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("RoomId", id);
+            cmd.Parameters.AddWithValue("id", id);
             cmd.Parameters.AddWithValue("hostId", hostId);
 
             int rowsAffected = await cmd.ExecuteNonQueryAsync();
@@ -146,7 +146,7 @@ public class RoomController : ControllerBase
                       "WHERE room_id = @id AND host_admin_id = @hostId AND status = 'STARTED'";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("RoomId", id);
+            cmd.Parameters.AddWithValue("id", id);
             cmd.Parameters.AddWithValue("hostId", hostId);
 
             int rowsAffected = await cmd.ExecuteNonQueryAsync();
